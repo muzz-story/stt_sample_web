@@ -1,0 +1,5 @@
+target/
+recordings/
+models/
+.venv-notesoop/
+__pycache__/

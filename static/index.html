@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>AI 면접 · 실시간 기록</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column; gap: 12px; padding: 20px 28px;
+         background: #f4f5f7; color: #22252b; font: 14px/1.5 "Pretendard Variable", Pretendard, "Malgun Gothic", system-ui, sans-serif; }
+  svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  button { font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  button:disabled { cursor: default; opacity: .45; }
+
+  .top { display: flex; align-items: center; gap: 12px; }
+  .top h1 { margin: 0 auto 0 0; font-size: 18px; }
+  .top h1 small { color: #8a8f99; font-weight: 400; font-size: 13px; }
+
+  .pill { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 14px; border-radius: 12px; background: #1d2232; color: #fff; }
+  .rec { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; margin-right: 10px; min-width: 64px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #8a8f99; }
+  .rec.on .dot { background: #f05a4f; animation: blink 1.2s infinite; }
+  .rec.paused .dot { background: #f2b33d; }
+  @keyframes blink { 50% { opacity: .35; } }
+  .me { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; margin-right: 6px; }
+  .wave { width: 120px; height: 28px; margin-left: 4px; }
+  .avatar { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700;
+            background: #2f6be0; box-shadow: 0 0 0 2px #1d2232, 0 0 0 2px rgba(240, 90, 79, 0); transition: box-shadow .08s; }
+  .pbtn { height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #3a4056; background: #262c40; color: #fff; font-size: 13px; font-weight: 600; }
+  .pbtn:not(:disabled):hover { background: #30374f; }
+  .pbtn.active { background: #3d4666; border-color: #56608a; }
+  .pbtn.warn { background: #5a2a2e; border-color: #8a3b40; }
+
+  .timer { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; border-radius: 10px; background: #e9ebef;
+           font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .timer svg { width: 18px; height: 18px; color: #555b66; }
+  [hidden] { display: none !important; }
+  .main, .icon-btn { height: 44px; border: 1px solid #d8dbe0; border-radius: 8px; background: #fff; color: #22252b; }
+  .main { padding: 0 18px; font-weight: 700; font-size: 15px; }
+  .main:not(:disabled):hover, .icon-btn:not(:disabled):hover { background: #f8f9fa; }
+  .main svg { color: #f05a4f; }          /* 녹음 시작: 빨간 원 */
+  .main.stop svg { color: #111; }        /* 녹음 종료: 검은 네모 */
+  .icon-btn { width: 44px; padding: 0; justify-content: center; color: #555b66; }
+  .icon-btn svg { width: 20px; height: 20px; }
+
+  dialog { width: 480px; padding: 0; border: 0; border-radius: 14px; color: inherit; box-shadow: 0 20px 60px rgba(0, 0, 0, .2); }
+  dialog::backdrop { background: rgba(20, 24, 36, .45); }
+  .dlg-h { padding: 20px 22px 4px; font-size: 17px; font-weight: 700; }
+  .dlg-b { display: flex; flex-direction: column; gap: 8px; padding: 12px 22px; }
+  .opt { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid #e3e5e9; border-radius: 10px; cursor: pointer; }
+  .opt:has(input:checked) { border-color: #2f6be0; background: #f3f7ff; }
+  .opt input { margin: 4px 0 0; accent-color: #2f6be0; }
+  .opt b { display: block; font-size: 14px; }
+  .opt span { color: #8a8f99; font-size: 12px; }
+  .field { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; font-size: 13px; font-weight: 600; }
+  .field input { height: 40px; padding: 0 12px; border: 1px solid #d8dbe0; border-radius: 8px; font: inherit; font-weight: 400; }
+  .dlg-f { display: flex; flex-direction: row-reverse; gap: 8px; padding: 12px 22px 20px; } /* DOM 상 저장이 먼저 → Enter = 저장 */
+  .dlg-f button { height: 40px; padding: 0 20px; border: 1px solid #d8dbe0; border-radius: 8px; background: #fff; font-weight: 600; }
+  .dlg-f .primary { background: #1d2232; border-color: #1d2232; color: #fff; }
+
+  .log { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid #e3e5e9; border-radius: 8px;
+         background: #fff; color: #5b616b; font-size: 12px; }
+  .log svg { width: 14px; height: 14px; color: #8a8f99; }
+  .log.error { color: #c2372c; border-color: #f3c9c4; background: #fdf3f2; }
+  .log.error svg { color: #c2372c; }
+
+  .card { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #fff; border: 1px solid #e3e5e9; border-radius: 12px; }
+  .card-h { display: flex; align-items: center; gap: 8px; padding: 14px 22px; border-bottom: 1px solid #eceef1; }
+  .card-h b { font-size: 15px; }
+  .muted { color: #8a8f99; font-size: 13px; }
+  .link { margin-left: auto; border: 0; background: none; color: #22252b; font-size: 13px; }
+  .link svg { transition: transform .15s; }
+  .card.collapsed .link svg { transform: rotate(180deg); }
+  .list { flex: 1; overflow-y: auto; padding: 8px 22px 16px; }
+  .empty { color: #b0b4bc; padding: 24px 0; text-align: center; }
+  .utt { padding: 8px 0; }
+  .utt.seek { margin: 0 -10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .utt.seek:hover { background: #f4f7fc; }
+  .player { display: flex; align-items: center; gap: 10px; padding: 10px 22px; border-bottom: 1px solid #eceef1; background: #fafbfc; font-size: 13px; }
+  .player svg { color: #8a8f99; }
+  .player span { font-weight: 600; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .player audio { flex: 1; max-width: 560px; height: 34px; margin-left: auto; }
+  .who { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+  .who b { font-weight: 700; }
+  .who span { color: #8a8f99; font-size: 12px; }
+  .utt p { margin: 2px 0 0; font-size: 14px; }
+  .utt.live .who b, .utt.live p { color: #a5aab3; }
+  .utt.live .who svg { width: 12px; height: 12px; color: #a5aab3; animation: spin 1s linear infinite; align-self: center; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>AI 면접 · 실시간 기록 <small id="modelName"></small></h1>
+  <div class="pill">
+    <span class="rec" id="rec"><i class="dot"></i><span id="recText">대기</span></span>
+    <span class="me"><span class="avatar" id="avatar">김</span>내 마이크<canvas class="wave" id="wave" aria-hidden="true"></canvas></span>
+    <button class="pbtn" id="pause" disabled></button>
+    <button class="pbtn" id="mute" disabled></button>
+    <button class="pbtn" id="sys" disabled></button>
+  </div>
+  <div class="timer"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span id="time">00:00</span></div>
+  <button class="main" id="main"></button>
+  <button class="icon-btn" id="upload" title="음성 파일로 변환 테스트" aria-label="음성 파일로 변환 테스트">
+    <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9 14l3-3 3 3"/></svg>
+  </button>
+  <input type="file" id="file" accept="audio/*,.m4a,.mp3,.wav,.flac,.ogg,.webm" hidden>
+  <button class="icon-btn" id="gear" title="음성 모델 설정" aria-label="음성 모델 설정">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+</header>
+<dialog id="settings">
+  <form method="dialog">
+    <div class="dlg-h">음성 모델 설정</div>
+    <div class="dlg-b">
+      <div class="dlg-b" id="opts" style="padding:0"></div>
+      <label class="field" id="field"><span id="fieldLabel"></span><input id="cred" autocomplete="off"></label>
+    </div>
+    <div class="dlg-f"><button value="save" class="primary">저장</button><button value="cancel">취소</button></div>
+  </form>
+</dialog>
+<section class="card" id="card">
+  <div class="card-h">
+    <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 9a4 4 0 0 1 0 6"/></svg>
+    <b>실시간 기록</b><span class="muted" id="count">0개 발언</span>
+    <button class="link" id="toggle">전체 보기 <svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+  </div>
+  <div class="player" id="player" hidden>
+    <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+    <span id="playerName"></span>
+    <audio id="audio" controls preload="metadata"></audio>
+  </div>
+  <div class="list" id="list"></div>
+</section>
+<footer class="log" id="log">
+  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+  <span id="status">녹음 시작을 누르면 마이크 권한을 요청합니다.</span>
+</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const ICON = {
+  pause: '<path d="M9 5v14M15 5v14"/>',
+  play: '<path d="M7 5l12 7-12 7z"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  micOff: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M3 3l18 18"/>',
+  monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>',
+  rec: '<circle cx="12" cy="12" r="6" fill="currentColor"/>',
+  spin: '<path d="M21 12a9 9 0 1 1-6.2-8.6"/>',
+};
+const icon = (name, label) => `<svg viewBox="0 0 24 24">${ICON[name]}</svg>${label}`;
+const COLORS = ['#2f6be0', '#1e7a46', '#8b4fd1', '#c56a12'];
+const RATE = 16000;
+
+// AudioWorklet: 16kHz float → Int16, 100ms(1600샘플)마다 메인 스레드로 전달
+const WORKLET = `
+class Tap extends AudioWorkletProcessor {
+  constructor() { super(); this.buf = new Int16Array(1600); this.n = 0; }
+  process([input]) {
+    const ch = input[0];
+    if (!ch) return true;
+    for (let i = 0; i < ch.length; i++) {
+      const s = Math.max(-1, Math.min(1, ch[i]));
+      this.buf[this.n++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      if (this.n === this.buf.length) {
+        this.port.postMessage(this.buf.buffer, [this.buf.buffer]);
+        this.buf = new Int16Array(1600); this.n = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('tap', Tap);`;
+
+// 음성 모델 설정 (톱니바퀴 → 대화상자). Deepgram 키는 저장 안 함, 서버 주소는 localStorage 저장.
+const ENGINES = {
+  deepgram: { name: 'Deepgram', desc: '클라우드 · 실시간 · 화자 구분', field: 'API 키', type: 'password', ph: '비우면 서버의 DEEPGRAM_API_KEY 사용' },
+  vibevoice: { name: 'VibeVoice-ASR-Streaming', desc: 'GPU 서버(VRAM 24GB 이상) · 실시간 · 화자 구분', field: '서버 주소', type: 'text', ph: 'http://gpu-server:8000' },
+  notesoop: { name: 'Notesoop-STT-Ko', desc: '로컬 서버 · 녹음 종료 후 변환 · 화자 구분 없음', field: '서버 주소', type: 'text', ph: 'http://localhost:7871' },
+  none: { name: '사용 안 함', desc: '녹음 파일만 저장' },
+};
+let engine = ENGINES[localStorage.engine] ? localStorage.engine : 'deepgram';
+const vals = {
+  deepgram: '',
+  vibevoice: localStorage.url_vibevoice ?? '',
+  notesoop: localStorage.url_notesoop ?? 'http://localhost:7871',
+};
+let draft, picked; // 대화상자 안에서 편집 중인 값 (저장 전까지 반영 안 함)
+
+$('opts').innerHTML = Object.entries(ENGINES).map(([k, e]) =>
+  `<label class="opt"><input type="radio" name="engine" value="${k}"><div><b>${e.name}</b><span>${e.desc}</span></div></label>`).join('');
+function showField() {
+  const e = ENGINES[picked];
+  $('field').hidden = !e.field;
+  if (!e.field) return;
+  $('fieldLabel').textContent = e.field;
+  $('cred').type = e.type;
+  $('cred').placeholder = e.ph;
+  $('cred').value = draft[picked];
+}
+$('opts').onchange = ev => { picked = ev.target.value; showField(); };
+$('cred').oninput = () => { draft[picked] = $('cred').value; };
+$('gear').onclick = () => {
+  draft = { ...vals };
+  picked = engine;
+  document.querySelector(`input[name=engine][value="${engine}"]`).checked = true;
+  showField();
+  $('settings').returnValue = '';
+  $('settings').showModal();
+};
+$('settings').onclose = () => {
+  if ($('settings').returnValue !== 'save') return;
+  engine = picked;
+  Object.assign(vals, draft);
+  localStorage.engine = engine;
+  localStorage.url_vibevoice = vals.vibevoice;
+  localStorage.url_notesoop = vals.notesoop;
+  showModel();
+};
+const showModel = () => $('modelName').textContent = ENGINES[engine].name;
+showModel();
+
+let state = 'idle';   // idle | rec | paused | saving | done
+let ctx, ws, tap, micStream, micGain, analyser, mix, sysStream, sysSrc;
+let muted = false, samples = 0, expanded = true, finals = [], interim = [];
+let source = 'mic'; // 현재 세션: 'mic' 녹음 | 'file' 업로드
+
+const mmss = sec => `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+function setStatus(t) {
+  $('status').textContent = t;
+  $('log').classList.toggle('error', /실패|오류|끊김|없습니다|차단/.test(t));
+}
+
+async function start() {
+  // 새로 녹음: 이전 기록 초기화
+  source = 'mic';
+  showPlayer(null);
+  reset();
+  $('main').disabled = true;
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    await openSocket();
+
+    // Chrome 은 16kHz 컨텍스트로 입력을 자동 리샘플링해 준다
+    ctx = new AudioContext({ sampleRate: RATE });
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
+    tap = new AudioWorkletNode(ctx, 'tap');
+    micGain = ctx.createGain();
+    mix = ctx.createGain();
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.minDecibels = -80; // 이보다 작은 소리(실내 잡음)는 막대 0
+    analyser.maxDecibels = -25;
+    analyser.smoothingTimeConstant = 0.75;
+    ctx.createMediaStreamSource(micStream).connect(micGain);
+    micGain.connect(mix);
+    micGain.connect(analyser);
+    mix.connect(tap);
+    tap.connect(ctx.destination); // 출력은 무음, 그래프 구동용
+    tap.port.onmessage = e => { if (ws.readyState === 1) { samples += e.data.byteLength / 2; ws.send(e.data); } };
+
+    state = 'rec';
+    meter();
+  } catch (e) {
+    setStatus(e.name === 'NotFoundError' ? '시작 실패: 연결된 마이크가 없습니다. 마이크/헤드셋을 연결한 뒤 다시 시도하세요.'
+      : e.name === 'NotAllowedError' ? '시작 실패: 마이크 권한이 차단되었습니다. 주소창 왼쪽 아이콘에서 허용해 주세요.'
+      : `시작 실패: ${e.message}`);
+    cleanup();
+  }
+  $('main').disabled = false;
+  render();
+}
+
+function reset() {
+  state = 'idle';
+  finals = []; interim = []; samples = 0; muted = false;
+  renderList();
+}
+
+// 서버 세션 열기 + 첫 메시지로 엔진 설정 전송
+async function openSocket() {
+  const sock = ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.binaryType = 'arraybuffer';
+  await new Promise((ok, fail) => { ws.onopen = ok; ws.onerror = () => fail(new Error('서버 연결 실패')); });
+  ws.send(JSON.stringify(engine === 'deepgram' ? { engine, key: vals.deepgram } : { engine, url: vals[engine] }));
+  // 이전 세션 소켓의 늦은 메시지/종료가 새 세션에 영향 없도록 sock 비교
+  ws.onmessage = e => { if (ws === sock) onServer(JSON.parse(e.data)); };
+  ws.onclose = () => { if (ws === sock && state !== 'done') { setStatus('서버 연결이 끊겼습니다.'); cleanup(); state = 'done'; render(); } };
+}
+
+// 음성 파일 변환 테스트: 브라우저에서 16kHz mono 로 디코딩 → 녹음과 같은 경로로 전송
+// 변환 중에 새 파일을 고르면 이전 작업은 중단: 작업마다 번호를 붙이고, 번호가 바뀌면 이전 작업은 스스로 멈춘다.
+let fileRun = 0;
+async function transcribeFile(file) {
+  const run = ++fileRun;
+  if (ws && ws.readyState <= 1 && (state === 'file' || state === 'saving')) {
+    const old = ws;
+    ws = null; // onmessage/onclose 가드(ws === sock)로 이전 세션 무시
+    old.close();
+  }
+  source = 'file';
+  showPlayer(file);
+  reset();
+  state = 'file';
+  render();
+  try {
+    setStatus(`파일 읽는 중: ${file.name}`);
+    const decoded = await new OfflineAudioContext(1, 1, RATE).decodeAudioData(await file.arrayBuffer());
+    const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * RATE), RATE); // 1채널 → 자동 다운믹스
+    const src = off.createBufferSource();
+    src.buffer = decoded;
+    src.connect(off.destination);
+    src.start();
+    const pcm = (await off.startRendering()).getChannelData(0);
+    if (run !== fileRun) return;
+
+    await openSocket();
+    if (run !== fileRun) return;
+    setStatus(`파일 전송 중: ${file.name} (${mmss(decoded.duration)})`);
+    for (let o = 0; o < pcm.length; o += 1600) {
+      if (run !== fileRun) return;
+      const chunk = pcm.subarray(o, o + 1600);
+      ws.send(Int16Array.from(chunk, s => Math.max(-1, Math.min(1, s)) * 0x7fff).buffer);
+      samples += chunk.length;
+      if (o % (1600 * 50) === 0) await new Promise(r => setTimeout(r)); // 5초 분량마다 화면 갱신 기회
+    }
+    stop();
+  } catch (e) {
+    if (run !== fileRun) return;
+    setStatus(`파일 변환 실패: ${e.name === 'EncodingError' ? '지원하지 않는 오디오 형식입니다' : e.message}`);
+    state = 'done'; // onclose 가 "연결 끊김"으로 덮어쓰지 않도록 먼저
+    if (ws?.readyState === 1) ws.close();
+    render();
+  }
+}
+
+function stop() {
+  state = 'saving';
+  ws.send('stop');
+  cleanup();
+  samples = 0; // 타이머 00:00 으로 (녹음 길이는 저장 완료 메시지에 표시)
+  setStatus('마무리 중... 남은 인식 결과를 받고 있습니다.');
+  render();
+}
+
+function cleanup() {
+  if (tap) tap.port.onmessage = null;
+  micStream?.getTracks().forEach(t => t.stop());
+  sysStream?.getTracks().forEach(t => t.stop());
+  sysStream = null;
+  if (ctx && ctx.state !== 'closed') ctx.close();
+}
+
+async function togglePause() {
+  if (state === 'rec') { await ctx.suspend(); state = 'paused'; }
+  else { await ctx.resume(); state = 'rec'; }
+  render();
+}
+
+function toggleMute() {
+  muted = !muted;
+  micGain.gain.value = muted ? 0 : 1;
+  render();
+}
+
+async function toggleSys() {
+  if (sysStream) {
+    sysStream.getTracks().forEach(t => t.stop());
+    sysSrc.disconnect();
+    sysStream = null;
+    return render();
+  }
+  try {
+    // 탭/화면 공유 창에서 "오디오 공유"를 체크해야 소리가 들어온다
+    const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, systemAudio: 'include' });
+    s.getVideoTracks().forEach(t => t.stop());
+    const audio = s.getAudioTracks();
+    if (!audio.length) return setStatus('공유할 때 "오디오 공유"를 체크해 주세요.');
+    sysStream = s;
+    sysSrc = ctx.createMediaStreamSource(new MediaStream(audio));
+    sysSrc.connect(mix);
+    audio[0].onended = () => { if (sysStream === s) toggleSys(); };
+  } catch (e) {
+    setStatus(`시스템 오디오 취소/실패: ${e.message}`);
+  }
+  render();
+}
+
+function onServer(m) {
+  if (m.type === 'status') setStatus(m.text);
+  if (m.type === 'transcript') { finals = m.finals; interim = m.interim; renderList(); }
+  if (m.type === 'saved') {
+    // 변환 실패 같은 오류 메시지는 지우지 않고 앞에 남긴다
+    const prev = $('log').classList.contains('error') ? $('status').textContent + ' · ' : '';
+    setStatus(`${prev}저장 완료 · 길이 ${mmss(m.seconds)} · ${Math.round(m.bytes / 1024)}KB · ${m.path}`);
+    state = 'done';
+    ws.close();
+    render();
+  }
+}
+
+// 마이크 입력 → 아바타 링 + 좌우 대칭 파형
+const BARS = 18; // 한쪽 막대 수
+function meter() {
+  if (state === 'saving' || state === 'done') { $('avatar').style.boxShadow = ''; drawWave(null); return; }
+  const live = state === 'rec';
+  const buf = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buf);
+  const rms = Math.sqrt(buf.reduce((a, x) => a + x * x, 0) / buf.length);
+  const lvl = live ? Math.min(1, rms * 12) : 0;
+  $('avatar').style.boxShadow = `0 0 0 2px #1d2232, 0 0 0 ${3 + lvl * 2}px rgba(240,90,79,${lvl > 0.08 ? 0.5 + lvl / 2 : 0})`;
+
+  // 음성 대역(약 94Hz~3.5kHz, bin 당 31Hz)을 막대로: 가운데 = 저음, 바깥 = 고음
+  const freq = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(freq);
+  const levels = new Float32Array(BARS);
+  for (let i = 0; i < BARS; i++) {
+    let m = 0;
+    for (let k = 3 + i * 6; k < 9 + i * 6; k++) m = Math.max(m, freq[k]);
+    levels[i] = live ? (m / 255) ** 1.6 * (1 - i / BARS * 0.5) : 0; // 바깥으로 갈수록 살짝 줄여 물결 모양
+  }
+  drawWave(levels);
+  requestAnimationFrame(meter);
+}
+
+function drawWave(levels) {
+  const c = $('wave'), g = c.getContext('2d');
+  const dpr = devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight, cy = H / 2;
+  if (c.width !== Math.round(W * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  const grad = g.createLinearGradient(0, 0, W, 0);
+  [[0, '#ff4fd8'], [0.3, '#8b5cff'], [0.5, '#3ee0ff'], [0.7, '#8b5cff'], [1, '#ff4fd8']].forEach(([o, col]) => grad.addColorStop(o, col));
+  g.fillStyle = grad;
+  g.shadowColor = '#6ad8ff';
+  g.shadowBlur = levels ? 6 : 0;
+  g.globalAlpha = levels && state === 'rec' ? 1 : 0.35; // 대기/일시정지/종료: 흐린 평평한 선
+  const step = W / 2 / BARS, bw = Math.max(1.5, step * 0.55);
+  for (let i = 0; i < BARS; i++) {
+    const h = Math.max(2, (levels ? levels[i] : 0) * (H - 4));
+    for (const x of [W / 2 + (i + 0.5) * step, W / 2 - (i + 0.5) * step]) g.fillRect(x - bw / 2, cy - h / 2, bw, h);
+  }
+}
+
+function render() {
+  const live = state === 'rec' || state === 'paused';
+  $('rec').className = 'rec ' + (state === 'rec' ? 'on' : state === 'paused' ? 'paused' : '');
+  $('recText').textContent = { idle: '대기', rec: '기록 중', paused: '일시정지', saving: '저장 중', done: '종료됨', file: '파일 변환' }[state];
+  $('pause').innerHTML = state === 'paused' ? icon('play', '재개') : icon('pause', '일시정지');
+  $('pause').classList.toggle('active', state === 'paused');
+  $('mute').innerHTML = muted ? icon('micOff', '음소거 해제') : icon('mic', '음소거');
+  $('mute').classList.toggle('warn', muted);
+  $('sys').innerHTML = icon('monitor', '시스템 오디오');
+  $('sys').classList.toggle('active', !!sysStream);
+  for (const id of ['pause', 'mute', 'sys']) $(id).disabled = !live;
+  const ready = state === 'idle' || state === 'done';
+  $('gear').disabled = !ready;
+  // 파일 선택은 마이크 녹음 중(마무리 포함)만 막는다. 파일 변환 중에 고르면 이전 변환을 중단하고 새로 시작.
+  $('upload').disabled = source === 'mic' && !ready;
+  $('main').className = 'main' + (ready ? '' : ' stop');
+  $('main').innerHTML = ready ? icon('rec', '녹음 시작') : icon('stop', '녹음 종료');
+  $('main').disabled = state === 'saving' || state === 'file';
+}
+
+function renderList() {
+  $('count').textContent = `${finals.length}개 발언`;
+  $('card').classList.toggle('collapsed', !expanded);
+  const list = $('list');
+  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  list.replaceChildren(...(expanded ? finals : finals.slice(-3)).map(u => entry(u, false)), ...interim.map(u => entry(u, true)));
+  if (!list.children.length) list.innerHTML = '<div class="empty">대화가 화자별로 실시간 기록됩니다</div>';
+  if (atBottom) list.scrollTop = list.scrollHeight;
+}
+
+function entry(u, live) {
+  const d = document.createElement('div');
+  d.className = 'utt' + (live ? ' live' : '');
+  const who = document.createElement('div');
+  who.className = 'who';
+  const name = document.createElement('b');
+  name.textContent = `화자 ${u.speaker + 1}`;
+  if (!live) name.style.color = COLORS[u.speaker % COLORS.length];
+  const time = document.createElement('span');
+  time.textContent = (live ? '인식 중... ' : '') + mmss(u.start);
+  if (live) who.insertAdjacentHTML('beforeend', `<svg viewBox="0 0 24 24">${ICON.spin}</svg>`);
+  who.append(name, time);
+  const p = document.createElement('p');
+  p.textContent = u.text;
+  d.append(who, p);
+  if (audioUrl && !live) { // 업로드한 파일: 발언 클릭 → 그 시점부터 재생
+    d.classList.add('seek');
+    d.title = '클릭하면 이 부분부터 재생';
+    d.onclick = () => { $('audio').currentTime = u.start; $('audio').play(); };
+  }
+  return d;
+}
+
+// 업로드한 원본 파일 재생기 (브라우저 안에서만 재생, 서버로 보내지 않음)
+let audioUrl = null;
+function showPlayer(file) {
+  if (audioUrl) URL.revokeObjectURL(audioUrl);
+  audioUrl = file ? URL.createObjectURL(file) : null;
+  $('player').hidden = !file;
+  $('playerName').textContent = file?.name ?? '';
+  if (audioUrl) $('audio').src = audioUrl;
+  else { $('audio').pause(); $('audio').removeAttribute('src'); $('audio').load(); }
+}
+
+$('main').onclick = () => state === 'idle' || state === 'done' ? start() : stop();
+$('upload').onclick = () => $('file').click();
+$('file').onchange = () => { const f = $('file').files[0]; $('file').value = ''; if (f) transcribeFile(f); };
+$('pause').onclick = togglePause;
+$('mute').onclick = toggleMute;
+$('sys').onclick = toggleSys;
+$('toggle').onclick = () => { expanded = !expanded; renderList(); };
+setInterval(() => $('time').textContent = mmss(samples / RATE), 250);
+render();
+drawWave(null);
+renderList();
+</script>
+</body>
+</html>
